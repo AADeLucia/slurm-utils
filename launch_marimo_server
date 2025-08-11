@@ -1,0 +1,107 @@
+#!/bin/bash
+# A wrapper script to dynamically launch a marimo notebook on Slurm,
+# with options for GPU usage and specifying the notebook file.
+
+# --- Source Slurm helper functions ---
+source slurm_helpers.sh
+
+# --- Usage Instructions ---
+usage() {
+    echo "Usage: $0 [--gpu] <path_to_notebook.py>"
+    echo "  --gpu : Requests a GPU for the job."
+    exit 1
+}
+
+# --- Argument Parsing ---
+PARTITION="${CPU_PARTITION}" # Default partition
+GRES_DIRECTIVE="" # No GPU resources by default
+NOTEBOOK_FILE=""
+
+# Loop through all command-line arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --gpu)
+            # Set the SBATCH directives for a GPU job.
+            PARTITION="${GPU_PARTITION}"
+            GRES_DIRECTIVE="#SBATCH --gres=gpu:1\n#SBATCH--account "${GPU_ACCOUNT}""
+            shift # move to the next argument
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            # Assume any other argument is the notebook file
+            if [ -n "$1" ]; then
+                NOTEBOOK_FILE="$1"
+            fi
+            shift # move to the next argument
+            ;;
+    esac
+done
+
+# --- Validate Input ---
+if [ -z "$NOTEBOOK_FILE" ]; then
+    echo "Error: Notebook file not provided."
+    usage
+fi
+if [ ! -f "$NOTEBOOK_FILE" ]; then
+    echo "Error: File not found: $NOTEBOOK_FILE"
+    usage
+fi
+
+# --- Extract the base name of the notebook file for the job name ---
+NOTEBOOK_BASENAME=$(basename "${NOTEBOOK_FILE}")
+JOB_NAME="marimo-${NOTEBOOK_BASENAME}"
+
+# --- Submit the job to Slurm using a 'here document' ---
+# This pipes the script block directly to sbatch.
+# Variables with a backslash (e.g., \$USER) are passed to the Slurm job.
+# Variables without one (e.g., ${GPU_SBATCH_DIRECTIVES}) are expanded immediately.
+SUB_MESSAGE=$(sbatch <<EOF
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --partition=${PARTITION}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=04:00:00
+#SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log  # Saves log to ${JOB_NAME}.${JOB_ID}.log
+
+# --- Dynamically inserted GPU directives (if --gpu was used) ---
+${GRES_DIRECTIVE}
+
+# --- Find a random open port on the compute node ---
+PORT=\$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+
+# --- Get the name of the node where the job is running ---
+NODE_HOSTNAME=\${SLURM_NODELIST}
+
+# --- Print connection information to the output file ---
+echo "================================================================="
+echo "Marimo notebook is running on node: \${NODE_HOSTNAME}"
+echo "The port is: \${PORT}"
+echo ""
+echo "To connect, run this command from your local machine:"
+echo "ssh -N -L \${PORT}:\${NODE_HOSTNAME}:\${PORT} ${PUBLIC_LOGIN_NODE}"
+echo "================================================================="
+echo ""
+
+# --- Start the marimo notebook server with the specified file ---
+echo "Starting marimo for: ${NOTEBOOK_FILE}"
+marimo edit "${NOTEBOOK_FILE}" --host 0.0.0.0 --port \${PORT}
+
+EOF
+)
+
+# --- Extract Job ID and print confirmation ---
+JOB_ID=$(parse_job_id_from_submission_message "${SUB_MESSAGE}")
+echo "✅ Job ${JOB_ID} submitted to Slurm to run '${NOTEBOOK_BASENAME}' on partition '${PARTITION}'."
+
+# --- Wait for job to start ---
+wait_for_job_start "${JOB_ID}"
+
+# --- Print log file for connection instructions
+LOG_FILE="${NOTEBOOK_LOGS}/${JOB_NAME}.${JOB_ID}.log"
+cat "${LOG_FILE}"
+

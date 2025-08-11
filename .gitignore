@@ -1,0 +1,41 @@
+# ===================================================================
+# Slurm and Job Output
+# ===================================================================
+# Ignore default Slurm output files (e.g., slurm-12345.out)
+*.out
+.err
+
+
+# ===================================================================
+# Python / Conda Environments
+# ===================================================================
+# Ignore local virtual environments
+venv/
+env/
+.venv/
+*/.env
+*/venv/
+*.yml
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# ===================================================================
+# General Development & OS Files
+# ===================================================================
+# Editor backup files
+*~
+*.swp
+*.swo
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Local configuration files that might contain secrets
+.env
+*.local
+local/
