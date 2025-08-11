@@ -10,7 +10,7 @@
 # The public-facing address of your cluster's login node.
 # This is the address you use to SSH into the cluster from your local machine.
 # If you use a nickname in your local SSH config, you can put there here instead.
-PUBLIC_LOGIN_NODE="your-cluster.edu"
+PUBLIC_LOGIN="${USER}@your-cluster.edu"
 
 # Your primary Slurm account name. Used for all jobs by default.
 ACCOUNT=$(id -gn)

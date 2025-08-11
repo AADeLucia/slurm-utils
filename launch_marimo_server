@@ -2,9 +2,6 @@
 # A wrapper script to dynamically launch a marimo notebook on Slurm,
 # with options for GPU usage and specifying the notebook file.
 
-# --- Source Slurm helper functions ---
-source slurm_helpers.sh
-
 # --- Usage Instructions ---
 usage() {
     echo "Usage: $0 [--gpu] <path_to_notebook.py>"
@@ -23,7 +20,7 @@ while [[ "$#" -gt 0 ]]; do
         --gpu)
             # Set the SBATCH directives for a GPU job.
             PARTITION="${GPU_PARTITION}"
-            GRES_DIRECTIVE="#SBATCH --gres=gpu:1\n#SBATCH--account "${GPU_ACCOUNT}""
+            GRES_DIRECTIVE="#SBATCH --gres=gpu:1\n#SBATCH --account ${GPU_ACCOUNT}"
             shift # move to the next argument
             ;;
         -h|--help)
@@ -83,7 +80,7 @@ echo "Marimo notebook is running on node: \${NODE_HOSTNAME}"
 echo "The port is: \${PORT}"
 echo ""
 echo "To connect, run this command from your local machine:"
-echo "ssh -N -L \${PORT}:\${NODE_HOSTNAME}:\${PORT} ${PUBLIC_LOGIN_NODE}"
+echo "ssh -N -L \${PORT}:\${NODE_HOSTNAME}:\${PORT} ${PUBLIC_LOGIN}"
 echo "================================================================="
 echo ""
 

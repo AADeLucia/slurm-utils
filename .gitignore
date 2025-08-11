@@ -1,6 +1,9 @@
 # ===================================================================
 # Slurm and Job Output
 # ===================================================================
+# Ignore config file
+config.sh
+
 # Ignore default Slurm output files (e.g., slurm-12345.out)
 *.out
 .err
