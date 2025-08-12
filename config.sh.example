@@ -27,3 +27,6 @@ GPU_ACCOUNT="${ACCOUNT}"
 
 # Location for marimo/Jupyter Notebook log files
 NOTEBOOK_LOGS="${HOME}/logs"
+
+# Caches
+OLLAMA_CACHE="${HOME}/.ollama/models"

@@ -58,27 +58,40 @@ get_squeue_value() {
     return 1 # Return non-zero to indicate error
 	fi
 
-  # Execute the command and return the result
-  # Want the 5th item on the 2nd line
-  # and remove trailing whitespace
-  squeue --job="${job_id}" | awk 'FNR == 2 {print $5}' | tr -d ' '
+  # Capture both stdout and stderr from squeue
+  local squeue_output
+  squeue_output=$(squeue --job="${job_id}" 2>&1)
+
+  # Check if the command failed because the job ID is no longer valid
+  if echo "${squeue_output}" | grep -q "Invalid job id specified"; then
+    # The job is no longer in the queue, likely completed or cancelled.
+    echo "COMPLETED"
+    return
+  fi
+
+  # If the job is still in the queue, parse the status (5th field of the 2nd line)
+  echo "${squeue_output}" | awk 'FNR == 2 {print $5}' | tr -d ' '
 }
 
 
 # Function: Given a job ID, wait for the job to start running
 wait_for_job_start() {
-  # Save first argument as the job ID
   local job_id="$1"
+  echo "Waiting for job ${job_id} to start..."
 
-  # Get the initial status
-  job_status=$(get_squeue_value "${job_id}")
+  while true; do
+    job_status=$(get_squeue_value "${job_id}")
 
-  # Wait for job state to become "R" for "Running"
-  while [[ ${job_status} != "R" ]]
-  do
-      job_status=$(get_squeue_value "${job_id}")
-      echo "Job state is ${job_status}"
+    if [[ "${job_status}" == "R" ]]; then
+      echo "Job ${job_id} is now Running."
+      break
+    elif [[ "${job_status}" == "COMPLETED" || -z "${job_status}" ]]; then
+      echo "Job ${job_id} is no longer in the queue. Assuming it completed or failed."
+      break
+    else
+      echo "Job state is '${job_status}'..."
       sleep 5
+    fi
   done
 }
 

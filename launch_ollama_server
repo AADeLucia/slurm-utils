@@ -1,0 +1,103 @@
+#!/bin/bash
+# A wrapper script to launch an Ollama server on a Slurm GPU node.
+# with options for GPU usage and model name.
+
+source ~/.bashrc
+
+# --- Usage Instructions ---
+usage() {
+    echo "Usage: $0 [--gpus <num_gpus>]"
+    echo "  --gpus <num_gpus>    : The number of GPUs to request (default: 1)."
+    exit 1
+}
+
+# --- Argument Parsing ---
+NUM_GPUS=1          # Default number of GPUs
+
+# Loop through all command-line arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --gpus)
+            NUM_GPUS="$2"
+            shift 2 # move past the flag and its value
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+# --- Set job-specific variables ---
+JOB_NAME="ollama-server"
+PARTITION="${GPU_PARTITION}" # Use GPU partition from config
+GRES_DIRECTIVE="#SBATCH --gres=gpu:${NUM_GPUS}" # Dynamic GPU count
+
+# --- Submit the job to Slurm using a 'here document' ---
+SUB_MESSAGE=$(sbatch --account=${GPU_ACCOUNT} <<EOF
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --partition=${PARTITION}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --time=00:30:00
+#SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log
+
+# --- Dynamically set GPU directive ---
+${GRES_DIRECTIVE}
+
+# --- Find a random open port on the compute node ---
+# PORT=\$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+# THIS DOESN'T WORK. PORT IS ALWAYS SET TO 11434
+PORT=11434
+
+# --- Set environment variables for Ollama ---
+export OLLAMA_MODELS="${OLLAMA_CACHE}"
+
+# --- Get the name of the node where the job is running ---
+NODE_HOSTNAME=\$(scontrol show hostnames \$SLURM_NODELIST | head -n 1)
+
+# --- Print connection information to the output file ---
+echo "================================================================="
+echo "Ollama Server is running on node: \${NODE_HOSTNAME}"
+echo "The port is: \${PORT}"
+echo ""
+echo "In a NEW terminal, set the OLLAMA_HOST variable and run a command:"
+echo "export OLLAMA_HOST=http://\${NODE_HOSTNAME}:\${PORT}"
+echo "ollama run {model name}"
+echo "================================================================="
+echo ""
+
+# --- Start the Ollama server ---
+# Supposed to be able to change port with
+# OLLAMA_HOST="0.0.0.0:${PORT}" ollama serve
+echo "Starting Ollama server..."
+ollama serve
+
+EOF
+)
+
+# --- Check for sbatch submission errors ---
+if [ $? -ne 0 ]; then
+    echo "❌ Error submitting job to Slurm."
+    echo "   sbatch output:"
+    echo "${SUB_MESSAGE}"
+    exit 1
+fi
+
+# --- Extract Job ID and print confirmation ---
+JOB_ID=$(parse_job_id_from_submission_message "${SUB_MESSAGE}")
+LOG_FILE="${NOTEBOOK_LOGS}/${JOB_NAME}.${JOB_ID}.log"
+echo "✅ Job ${JOB_ID} submitted to Slurm to run '${JOB_NAME}' on partition '${PARTITION}'."
+echo "   GPUs: ${NUM_GPUS}"
+echo "   Log file: ${LOG_FILE}"
+
+# --- Wait for job to start and print connection info ---
+wait_for_job_start "${JOB_ID}"
+sleep 5
+
+echo "✅ Connection info found in ${LOG_FILE}:"
+cat "${LOG_FILE}"

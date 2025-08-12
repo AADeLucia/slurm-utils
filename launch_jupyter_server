@@ -47,7 +47,7 @@ SUB_MESSAGE=$(sbatch <<EOF
 #SBATCH --account=${ACCOUNT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
 #SBATCH --time=04:00:00
 #SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log  # Saves log to ${JOB_NAME}.${JOB_ID}.log
@@ -111,5 +111,6 @@ grep "ssh" "${LOG_FILE}"
 echo "Open a web browser on your local machine and navigate to"
 grep "127.0.0" "${LOG_FILE}" | tail -1
 
-echo "Access the log file for details:\n${LOG_FILE}"
+echo "Access the log file for details:"
+echo "${LOG_FILE}"
 
