@@ -2,6 +2,8 @@
 # A wrapper script to dynamically launch a marimo notebook on Slurm,
 # with options for GPU usage and specifying the notebook file.
 
+source ~/.bashrc
+
 # --- Usage Instructions ---
 usage() {
     echo "Usage: $0 [--gpu] <path_to_notebook.py>"

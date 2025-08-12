@@ -1,0 +1,115 @@
+#!/bin/bash
+# A wrapper script to dynamically launch a Jupyter Notebook on Slurm,
+# with options for GPU usage and specifying the notebook file.
+
+source ~/.bashrc
+
+# --- Usage Instructions ---
+usage() {
+    echo "Usage: $0 [--gpu] [path_to_directory]"
+    echo "  --gpu              : Requests a GPU for the job."
+    echo "  path_to_directory  : Optional. The directory to start the Jupyter server in."
+    echo "                       Defaults to the current directory if not provided."
+    exit 1
+}
+
+# --- Argument Parsing ---
+PARTITION="${CPU_PARTITION}" # Default to CPU partition from config.sh
+GRES_DIRECTIVE=""            # No GPU resources by default
+
+# Loop through all command-line arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --gpu)
+            # Set the SBATCH directives for a GPU job.
+            PARTITION="${GPU_PARTITION}"
+            GRES_DIRECTIVE="#SBATCH --gres=gpu:1\n#SBATCH --account ${GPU_ACCOUNT}"
+            shift # move to the next argument
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+    esac
+done
+
+# --- Set Job Name ---
+JOB_NAME="jupyter"
+
+# --- Submit the job to Slurm using a 'here document' ---
+# This pipes the script block directly to sbatch.
+# Variables with a backslash (e.g., \$USER) are passed to the Slurm job.
+# Variables without one (e.g., ${GRES_DIRECTIVE}) are expanded immediately.
+SUB_MESSAGE=$(sbatch <<EOF
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --partition=${PARTITION}
+#SBATCH --account=${ACCOUNT}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=04:00:00
+#SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log  # Saves log to ${JOB_NAME}.${JOB_ID}.log
+
+# --- Dynamically inserted GPU directives (if --gpu was used) ---
+${GRES_DIRECTIVE}
+
+# --- Find a random open port on the compute node ---
+# Use python to find a free port.
+PORT=\$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+
+# --- Get the name of the node where the job is running ---
+NODE_HOSTNAME=\${SLURM_NODELIST}
+
+# --- Print connection information to the log file ---
+echo "================================================================="
+echo "Jupyter Notebook is running on node: \${NODE_HOSTNAME}"
+echo "The port is: \${PORT}"
+echo ""
+echo "1. From your local machine, create an SSH tunnel:"
+echo "   ssh -N -L \${PORT}:\${NODE_HOSTNAME}:\${PORT} ${PUBLIC_LOGIN}"
+echo ""
+echo "2. Open a web browser on your local machine and navigate to"
+echo "   one of the URLs that will be printed below."
+echo "   It will look like: http://localhost:\${PORT}/?token=..."
+echo "================================================================="
+echo ""
+
+# --- Start the Jupyter Notebook server ---
+# The --no-browser flag is essential as we are on a headless server.
+# The --ip=0.0.0.0 allows it to accept connections from outside.
+# All output, including the URL with the token, will go to the log file.
+echo "Starting Jupyter Notebook server..."
+jupyter notebook --no-browser --ip=0.0.0.0 --port=\${PORT} --notebook-dir="${HOME}"
+
+EOF
+)
+
+# --- Extract Job ID and print confirmation ---
+JOB_ID=$(parse_job_id_from_submission_message "${SUB_MESSAGE}")
+echo "✅ Job ${JOB_ID} submitted to Slurm to run Jupyter Notebook on partition '${PARTITION}'."
+echo "   Working Directory: ${NOTEBOOK_DIR}"
+echo "   Waiting for job to start to retrieve connection details..."
+
+# --- Wait for job to start ---
+wait_for_job_start "${JOB_ID}"
+
+# --- Print log file for connection instructions ---
+# The log file contains the SSH tunnel command and the Jupyter URL with the token.
+LOG_FILE="${NOTEBOOK_LOGS}/${JOB_NAME}.${JOB_ID}.log"
+echo ""
+echo "✅ Job started!"
+echo "-----------------------------------------------------------------"
+
+# Parse the log file for the SSH command and the localhost URL.
+# The 'grep' command finds the specific lines we need.
+# The 'sed' command cleans up the label for cleaner output.
+echo "From your local machine, create an SSH tunnel:"
+grep "ssh" "${LOG_FILE}"
+
+echo "Open a web browser on your local machine and navigate to"
+grep "127.0.0" "${LOG_FILE}" | tail -1
+
+echo "Access the log file for details:\n${LOG_FILE}"
+
