@@ -43,7 +43,7 @@ SUB_MESSAGE=$(sbatch --account=${GPU_ACCOUNT} <<EOF
 #SBATCH --partition=${PARTITION}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --time=00:30:00
+#SBATCH --time=04:00:00
 #SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log
 
 # --- Dynamically set GPU directive ---
