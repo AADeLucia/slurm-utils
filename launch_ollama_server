@@ -34,7 +34,6 @@ done
 # --- Set job-specific variables ---
 JOB_NAME="ollama-server"
 PARTITION="${GPU_PARTITION}" # Use GPU partition from config
-GRES_DIRECTIVE="#SBATCH --gres=gpu:${NUM_GPUS}" # Dynamic GPU count
 
 # --- Submit the job to Slurm using a 'here document' ---
 SUB_MESSAGE=$(sbatch --account=${GPU_ACCOUNT} <<EOF
@@ -45,14 +44,17 @@ SUB_MESSAGE=$(sbatch --account=${GPU_ACCOUNT} <<EOF
 #SBATCH --ntasks=1
 #SBATCH --time=04:00:00
 #SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log
+#SBATCH --gres=gpu:${NUM_GPUS}
 
-# --- Dynamically set GPU directive ---
-${GRES_DIRECTIVE}
+# --- Load necessary modules ---
+source ~/.bashrc
 
-# --- Find a random open port on the compute node ---
-# PORT=\$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-# THIS DOESN'T WORK. PORT IS ALWAYS SET TO 11434
+# --- Check if default port is open ---
 PORT=11434
+if ! check_port_availability "\${PORT}"; then
+    echo "❌ Port \${PORT} is already in use. Aborting."
+    exit 1
+fi
 
 # --- Set environment variables for Ollama ---
 export OLLAMA_MODELS="${OLLAMA_CACHE}"
@@ -73,9 +75,8 @@ echo ""
 
 # --- Start the Ollama server ---
 # Supposed to be able to change port with
-# OLLAMA_HOST="0.0.0.0:${PORT}" ollama serve
 echo "Starting Ollama server..."
-ollama serve
+OLLAMA_HOST="0.0.0.0:\${PORT}" ollama serve
 
 EOF
 )

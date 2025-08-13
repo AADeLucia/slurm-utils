@@ -95,3 +95,43 @@ wait_for_job_start() {
   done
 }
 
+
+# Function: Given a port, check if the port is open
+# Returns 0 (true) if the port is available, or 1 (false) if the port is in use or an invalid port was provided.
+check_port_availability() {
+    local port="$1"
+    
+    # --- Debugging: Separated validation checks ---
+    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+        echo "Error: Port '${port}' is not a number." >&2
+        return 1
+    fi
+    if [ "$port" -lt 1 ]; then
+        echo "Error: Port '${port}' is less than 1." >&2
+        return 1
+    fi
+    if [ "$port" -gt 65535 ]; then
+        echo "Error: Port '${port}' is greater than 65535." >&2
+        return 1
+    fi
+
+    # Use python to quickly check if the port is available by trying to bind to it.
+    if python -c "import socket; s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); exit(0) if s.bind(('127.0.0.1', $port)) is None else exit(1)" 2>/dev/null; then
+        return 0 # Success, port is available
+    else
+        # Port is in use. Use lsof to find out what process is using it.
+        if command -v lsof >/dev/null 2>&1; then
+            # Get process info. -n and -P make it faster by skipping name resolution.
+            local process_info
+            process_info=$(lsof -i :${port} -sTCP:LISTEN -n -P | awk 'FNR == 2 {print "PID: " $2 ", Command: " $1}')
+            if [ -n "$process_info" ]; then
+                echo "Port ${port} is in use by -> ${process_info}" >&2
+            else
+                echo "Port ${port} is in use, but process info could not be determined." >&2
+            fi
+        else
+            echo "Port ${port} is in use. 'lsof' not found to get process details." >&2
+        fi
+        return 1 # Failure, port is not available
+    fi
+}
