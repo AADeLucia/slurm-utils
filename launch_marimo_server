@@ -1,13 +1,15 @@
 #!/bin/bash
 # A wrapper script to dynamically launch a marimo notebook on Slurm,
-# with options for GPU usage and specifying the notebook file.
+# with options for GPU usage, conda environment, and specifying the notebook file.
 
 source ~/.bashrc
 
 # --- Usage Instructions ---
 usage() {
-    echo "Usage: $0 [--gpu] <path_to_notebook.py>"
-    echo "  --gpu : Requests a GPU for the job."
+    echo "Usage: $0 [--gpu] [--env <conda_env_name>] [<path_to_notebook.py>]"
+    echo "  --gpu                : Requests a GPU for the job."
+    echo "  --env <conda_env_name> : (Optional) Runs marimo inside the specified conda environment."
+    echo "  <path_to_notebook.py>  : (Optional) Path to a specific notebook file. If not provided, starts a general session."
     exit 1
 }
 
@@ -15,6 +17,8 @@ usage() {
 PARTITION="${CPU_PARTITION}" # Default partition
 GRES_DIRECTIVE="" # No GPU resources by default
 NOTEBOOK_FILE=""
+ENV_NAME=""
+CONDA_RUN_PREFIX="" # This will be empty unless an env is specified
 
 # Loop through all command-line arguments
 while [[ "$#" -gt 0 ]]; do
@@ -22,8 +26,19 @@ while [[ "$#" -gt 0 ]]; do
         --gpu)
             # Set the SBATCH directives for a GPU job.
             PARTITION="${GPU_PARTITION}"
-            GRES_DIRECTIVE="#SBATCH --gres=gpu:1\n#SBATCH --account ${GPU_ACCOUNT}"
+            GRES_DIRECTIVE="#SBATCH --gres=gpu:1"
+            ACCOUNT="${GPU_ACCOUNT}"
             shift # move to the next argument
+            ;;
+        --env)
+            # Check if an environment name was provided after the flag
+            if [ -n "$2" ]; then
+                ENV_NAME="$2"
+                shift 2 # move past --env and its value
+            else
+                echo "Error: --env requires a non-empty option argument."
+                usage
+            fi
             ;;
         -h|--help)
             usage
@@ -38,25 +53,33 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-# --- Validate Input ---
+# --- Determine Job Name and handle Notebook File ---
 if [ -z "$NOTEBOOK_FILE" ]; then
-    echo "Error: Notebook file not provided."
-    usage
-fi
-if [ ! -f "$NOTEBOOK_FILE" ]; then
-    echo "Error: File not found: $NOTEBOOK_FILE"
-    usage
+    # If no notebook file is provided, set a generic job name for an interactive session.
+    JOB_NAME="marimo-interactive"
+    echo ">>> No notebook file specified. Starting an interactive marimo session."
+else
+    # If a notebook file is provided, set the job name based on its name.
+    NOTEBOOK_BASENAME=$(basename "${NOTEBOOK_FILE}")
+    JOB_NAME="marimo-${NOTEBOOK_BASENAME}"
+    # If the file doesn't exist, print a message. Marimo will create it on launch.
+    if [ ! -f "$NOTEBOOK_FILE" ]; then
+        echo ">>> Creating new notebook file: $NOTEBOOK_FILE"
+    fi
 fi
 
-# --- Extract the base name of the notebook file for the job name ---
-NOTEBOOK_BASENAME=$(basename "${NOTEBOOK_FILE}")
-JOB_NAME="marimo-${NOTEBOOK_BASENAME}"
+# --- Set up Conda Environment if specified ---
+if [ -n "$ENV_NAME" ]; then
+    CONDA_RUN_PREFIX="conda run -n ${ENV_NAME}"
+    echo ">>> Will run in conda environment: ${ENV_NAME}"
+fi
+
 
 # --- Submit the job to Slurm using a 'here document' ---
 # This pipes the script block directly to sbatch.
 # Variables with a backslash (e.g., \$USER) are passed to the Slurm job.
-# Variables without one (e.g., ${GPU_SBATCH_DIRECTIVES}) are expanded immediately.
-SUB_MESSAGE=$(sbatch <<EOF
+# Variables without one (e.g., ${CONDA_RUN_PREFIX}) are expanded immediately.
+SUB_MESSAGE=$(sbatch --account "${ACCOUNT}" <<EOF
 #!/bin/bash
 #SBATCH --job-name=${JOB_NAME}
 #SBATCH --partition=${PARTITION}
@@ -64,7 +87,7 @@ SUB_MESSAGE=$(sbatch <<EOF
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log  # Saves log to ${JOB_NAME}.${JOB_ID}.log
 
 # --- Dynamically inserted GPU directives (if --gpu was used) ---
@@ -87,15 +110,17 @@ echo "================================================================="
 echo ""
 
 # --- Start the marimo notebook server with the specified file ---
-echo "Starting marimo for: ${NOTEBOOK_FILE}"
-marimo edit "${NOTEBOOK_FILE}" --host 0.0.0.0 --port \${PORT}
+# The "${NOTEBOOK_FILE}" part will be an empty string if no file was provided,
+# which correctly launches a general marimo session.
+echo "Starting marimo for: ${NOTEBOOK_FILE:-"new session"}"
+${CONDA_RUN_PREFIX} marimo edit "${NOTEBOOK_FILE}" --host 0.0.0.0 --port \${PORT}
 
 EOF
 )
 
 # --- Extract Job ID and print confirmation ---
 JOB_ID=$(parse_job_id_from_submission_message "${SUB_MESSAGE}")
-echo "✅ Job ${JOB_ID} submitted to Slurm to run '${NOTEBOOK_BASENAME}' on partition '${PARTITION}'."
+echo "✅ Job ${JOB_ID} submitted to Slurm to run '${JOB_NAME}' on partition '${PARTITION}'."
 
 # --- Wait for job to start ---
 wait_for_job_start "${JOB_ID}"
@@ -103,4 +128,3 @@ wait_for_job_start "${JOB_ID}"
 # --- Print log file for connection instructions
 LOG_FILE="${NOTEBOOK_LOGS}/${JOB_NAME}.${JOB_ID}.log"
 cat "${LOG_FILE}"
-

@@ -100,7 +100,7 @@ wait_for_job_start() {
 # Returns 0 (true) if the port is available, or 1 (false) if the port is in use or an invalid port was provided.
 check_port_availability() {
     local port="$1"
-    
+
     # --- Debugging: Separated validation checks ---
     if ! [[ "$port" =~ ^[0-9]+$ ]]; then
         echo "Error: Port '${port}' is not a number." >&2
