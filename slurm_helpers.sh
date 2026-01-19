@@ -9,13 +9,13 @@ source config.sh
 
 # Function: Check the status of all of $USER jobs
 check_jobs() {
-  squeue -u "${USER}"
+  squeue --all -u "${USER}"
 }
 
 
 # Function: Check the status of all jobs in the specified account
 check_account_jobs() {
-  squeue --account="${ACCOUNT}"
+  squeue --all --account="${ACCOUNT}"
 }
 
 
