@@ -49,7 +49,7 @@ SUB_MESSAGE=$(sbatch <<EOF
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=${NOTEBOOK_LOGS}/%x.%A.log  # Saves log to ${JOB_NAME}.${JOB_ID}.log
 
 # --- Dynamically inserted GPU directives (if --gpu was used) ---
@@ -94,6 +94,7 @@ echo "   Waiting for job to start to retrieve connection details..."
 
 # --- Wait for job to start ---
 wait_for_job_start "${JOB_ID}"
+sleep 10  # Give it a moment to ensure the log file is created.
 
 # --- Print log file for connection instructions ---
 # The log file contains the SSH tunnel command and the Jupyter URL with the token.

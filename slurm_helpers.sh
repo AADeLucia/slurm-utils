@@ -13,6 +13,12 @@ check_jobs() {
 }
 
 
+# Function: Check the status of all jobs in the specified account
+check_account_jobs() {
+  squeue --account="${ACCOUNT}"
+}
+
+
 # Function: Create an interactive CPU job
 # Runs for 2 hours
 quick_cpu() {
