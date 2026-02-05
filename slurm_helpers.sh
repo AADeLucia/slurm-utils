@@ -4,8 +4,32 @@
 #
 # Misc. helper functions for basic Slurm tasks
 ##################
-source config.sh
 
+# --- Include Guard to prevent circular sourcing ---
+if [ -z "$_SLURM_HELPERS_LOADED" ]; then
+    _SLURM_HELPERS_LOADED=1
+else
+    return 0
+fi
+
+# --- Self-Discovery: Find where this script actually is ---
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+UTILS_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+
+# --- Source Config (Relative to this script) ---
+if [ -f "${UTILS_DIR}/config.sh" ]; then
+    source "${UTILS_DIR}/config.sh"
+else
+    echo "⚠️  WARNING: config.sh not found in ${UTILS_DIR}"
+fi
+
+
+# --- Functions ---
 
 # Function: Check the status of all of $USER jobs
 check_jobs() {
