@@ -43,13 +43,18 @@ check_account_jobs() {
 }
 
 
+# Function: Check the status of all partition nodes
+check_partition_nodes() {
+  sinfo --all
+}
+
+
 # Function: Create an interactive CPU job
 # Runs for 2 hours
 quick_cpu() {
   salloc --job-name=interactive-cpu \
   --nodes=1 \
-  --partition="${CPU_PARTITION}" \
-  --account "${ACCOUNT}" \
+  $(get_partition_options "cpu") \
   --time=02:00:00 \
   srun --pty bash
 }
@@ -60,8 +65,7 @@ quick_cpu() {
 quick_gpu() {
   salloc --job-name=interactive-gpu \
     --nodes=1 \
-    --partition="${GPU_PARTITION}" \
-    --account "${GPU_ACCOUNT}" \
+    $(get_partition_options "gpu") \
     --gres=gpu:1 \
     --time=02:00:00 \
     srun --pty bash

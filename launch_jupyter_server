@@ -31,9 +31,10 @@ usage() {
 }
 
 # --- Argument Parsing ---
-PARTITION_KEY="cpu"          # Default to CPU partition
+PARTITION_KEY="cpu" # Default to CPU partition
 PARTITION_OPTS=$(get_partition_options "cpu")
-GRES_DIRECTIVE=""            # No GPU resources by default
+GRES_DIRECTIVE="" # No GPU resources by default
+NOTEBOOK_DIR="${HOME}" # Default notebook directory
 
 # Loop through all command-line arguments
 while [[ "$#" -gt 0 ]]; do
@@ -59,19 +60,31 @@ while [[ "$#" -gt 0 ]]; do
             usage
             ;;
         *)
+            # Assume any non-flag argument is the notebook directory
+            NOTEBOOK_DIR="$1"
             shift
             ;;
     esac
 done
 
+
+# Validate the directory exists
+if [ ! -d "${NOTEBOOK_DIR}" ]; then
+    echo "❌ Error: Directory '${NOTEBOOK_DIR}' does not exist."
+    exit 1
+fi
+
+# Convert to absolute path
+NOTEBOOK_DIR="$(cd "${NOTEBOOK_DIR}" && pwd)"
+
+
 # --- Set Job Name ---
 JOB_NAME="jupyter"
 
 # --- Submit the job to Slurm using a 'here document' ---
-SUB_MESSAGE=$(sbatch <<EOF
+SUB_MESSAGE=$(sbatch ${PARTITION_OPTS} <<EOF
 #!/bin/bash
 #SBATCH --job-name=${JOB_NAME}
-#SBATCH --partition=${PARTITION_OPTS}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -97,7 +110,7 @@ echo "================================================================="
 echo ""
 
 echo "Starting Jupyter Notebook server..."
-jupyter notebook --no-browser --ip=0.0.0.0 --port=\${PORT} --notebook-dir="${HOME}"
+jupyter notebook --no-browser --ip=0.0.0.0 --port=\${PORT} --notebook-dir="${NOTEBOOK_DIR}"
 
 EOF
 )
@@ -124,3 +137,4 @@ grep "127.0.0" "${LOG_FILE}" | tail -1
 echo ""
 echo "Access the log file for details:"
 echo "${LOG_FILE}"
+
