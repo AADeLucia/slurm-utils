@@ -1,12 +1,13 @@
 #!/bin/bash
 #
-# launch_vllm_server
+# launch_unsloth_server
+# https://unsloth.ai/
 #
-# A wrapper script to dynamically launch a vLLM OpenAI-compatible API server on Slurm.
+# A wrapper script to dynamically launch an Unsloth studio server on Slurm.
 #
-# It waits for the job to start and then prints the necessary SSH tunnel
-# command and an example python command to interact with the model endpoint.
-#
+# It waits for the job to start and then prints the necessary SSH tunnel command
+# Follow the Unsloth installation guide to set up your local environment:
+# https://unsloth.ai/docs/new/studio/install
 
 # --- Self-Discovery: Find the utils directory ---
 SOURCE="${BASH_SOURCE[0]}"
@@ -27,20 +28,16 @@ fi
 
 # --- Usage Instructions ---
 usage() {
-    echo "Usage: $0 --model <model_name> [--partition <name>] [--gpus <num_gpus>] [--time <HH:MM:SS>] [--model-max-length <len>]"
-    echo "  --model <model_name>       : Required. The name of the model to host (e.g., 'meta-llama/Llama-2-7b-chat-hf')."
+    echo "Usage: $0 [--partition <name>] [--gpus <num_gpus>] [--time <HH:MM:SS>]"
     echo "  --partition <name>         : Optional. Preset profile (cpu, gpu, gpu-h200). Defaults to 'gpu'."
     echo "  --gpus <num_gpus>          : Optional. The number of GPUs to request. Defaults to 1."
     echo "  --time <HH:MM:SS>          : Optional. The wall time for the job. Defaults to 04:00:00."
-    echo "  --model-max-length <len>   : Optional. The maximum sequence length for the model."
     exit 1
 }
 
 # --- Argument Parsing ---
 NUM_GPUS=1                   # Default to a single GPU
-MODEL_NAME=""                # Model name is required
 TIME_LIMIT="04:00:00"        # Default to 4 hours
-MODEL_MAX_LEN=""             # Default to empty (let vLLM decide)
 PARTITION_KEY="gpu"          # Default to GPU partition for vLLM
 PARTITION_OPTS=$(get_partition_options "gpu")
 
@@ -64,16 +61,8 @@ while [[ "$#" -gt 0 ]]; do
             NUM_GPUS="$2"
             shift 2
             ;;
-        --model)
-            MODEL_NAME="$2"
-            shift 2
-            ;;
         --time)
             TIME_LIMIT="$2"
-            shift 2
-            ;;
-        --model-max-length)
-            MODEL_MAX_LEN="$2"
             shift 2
             ;;
         -h|--help)
@@ -86,17 +75,6 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-# --- Validate Input ---
-if [ -z "$MODEL_NAME" ]; then
-    echo "Error: Model name not provided."
-    usage
-fi
-
-# --- Prepare Optional Flags ---
-MAX_LEN_FLAG=""
-if [ -n "$MODEL_MAX_LEN" ]; then
-    MAX_LEN_FLAG="--max-model-len ${MODEL_MAX_LEN}"
-fi
 
 # --- Construct GRES Directive ---
 GRES_DIRECTIVE=""
@@ -104,14 +82,8 @@ if [ "$NUM_GPUS" -gt 0 ]; then
     GRES_DIRECTIVE="#SBATCH --gres=gpu:${NUM_GPUS}"
 fi
 
-# --- Qwen Specific Flags ---
-QWEN_FLAGS=""
-if [[ "$MODEL_NAME" == *"Qwen"* ]]; then
-    QWEN_FLAGS="--dtype bfloat16 --reasoning-parser qwen3 --language-model-only"
-fi
-
 # --- Set Job Name from Model ---
-JOB_NAME="vllm-$(basename ${MODEL_NAME})"
+JOB_NAME="unsloth"
 
 # --- Submit the job to Slurm using a 'here document' ---
 SUB_MESSAGE=$(sbatch ${PARTITION_OPTS} <<EOF
@@ -129,45 +101,32 @@ ${GRES_DIRECTIVE}
 
 # --- Load necessary modules ---
 module load anaconda3/2024.02-1
-conda activate vllm_env
 
-echo "Loaded modules and activated conda environment."
-echo "Conda environment: \$(conda info --envs | grep '*' | awk '{print \$1}')"
 echo "CUDA_VISIBLE_DEVICES: \${CUDA_VISIBLE_DEVICES}"
 
 PORT=\$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 NODE_HOSTNAME=\$(hostname -s)
 
 echo "================================================================="
-echo "vLLM Server is starting on node: \${NODE_HOSTNAME} on port \${PORT}"
-echo "Hosting model: ${MODEL_NAME}"
+echo "Unsloth Server is starting on node: \${NODE_HOSTNAME} on port \${PORT}"
 echo ""
 echo "--> SSH TUNNEL COMMAND: ssh -N -L \${PORT}:\${NODE_HOSTNAME}:\${PORT} ${PUBLIC_LOGIN}"
 echo "--> API BASE URL (localhost): http://localhost:\${PORT}/v1"
 echo "--> API BASE URL (direct): http://\${NODE_HOSTNAME}:\${PORT}/v1"
 echo ""
-echo "--> PYTHON EXAMPLE: python -c \"from openai import OpenAI; client = OpenAI(base_url='http://\${NODE_HOSTNAME}:\${PORT}/v1', api_key='not-needed'); print(client.completions.create(model='${MODEL_NAME}', prompt='San Francisco is a', max_tokens=7).choices[0].text)\""
 echo "================================================================="
 echo ""
 
-echo "Starting vLLM server..."
-vllm serve "${MODEL_NAME}" \
-  --port \${PORT} \
-  --tensor-parallel-size "${NUM_GPUS}" ${MAX_LEN_FLAG} ${QWEN_FLAGS} \
-  --uvicorn-log-level warning
+unsloth studio --host 0.0.0.0 --port \${PORT}
 
 EOF
 )
 
 # --- Extract Job ID and print confirmation ---
 JOB_ID=$(parse_job_id_from_submission_message "${SUB_MESSAGE}")
-echo "✅ Job ${JOB_ID} submitted to Slurm to run vLLM on partition '${PARTITION_KEY}'."
-echo "   Model: ${MODEL_NAME}"
+echo "✅ Job ${JOB_ID} submitted to Slurm to run on partition '${PARTITION_KEY}'."
 echo "   GPUs: ${NUM_GPUS}"
 echo "   Time Limit: ${TIME_LIMIT}"
-if [ -n "$MODEL_MAX_LEN" ]; then
-    echo "   Max Model Length: ${MODEL_MAX_LEN}"
-fi
 echo "   Waiting for job to start to retrieve connection details..."
 
 # --- Wait for job to start ---
@@ -189,6 +148,4 @@ echo ""
 echo "API URLs (use the direct URL only if on the same network as the compute node):"
 grep "API BASE URL" "${LOG_FILE}" | sed 's/--> API BASE URL //'
 echo ""
-echo "Example Request (make sure 'pip install openai' is installed locally):"
-grep "PYTHON EXAMPLE" "${LOG_FILE}" | sed 's/--> PYTHON EXAMPLE: //'
 echo "-----------------------------------------------------------------"

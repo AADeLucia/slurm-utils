@@ -31,6 +31,16 @@ fi
 
 # --- Functions ---
 
+# Function: Reload this script to pick up any changes. Useful for development.
+reload_slurm_utils() {
+    # Unset the include guard variable to allow reloading
+    unset _SLURM_HELPERS_LOADED
+
+    # Reload ~/.bashrc
+    source ~/.bashrc
+}
+
+
 # Function: Check the status of all of $USER jobs
 check_jobs() {
   squeue --all -u "${USER}"
@@ -61,14 +71,15 @@ quick_cpu() {
 
 
 # Function: Create an interactive GPU job
-# Runs for 2 hours
+# Runs for 2 hours. Accepts an optional partition name (defaults to "gpu").
 quick_gpu() {
+  local partition="${1:-gpu}"
   salloc --job-name=interactive-gpu \
     --nodes=1 \
-    $(get_partition_options "gpu") \
+    $(get_partition_options "${partition}") \
     --gres=gpu:1 \
     --time=02:00:00 \
-    srun --pty bash
+    srun --cpu-bind=none --pty bash
 }
 
 
