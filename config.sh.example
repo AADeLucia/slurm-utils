@@ -12,21 +12,47 @@
 # If you use a nickname in your local SSH config, you can put there here instead.
 PUBLIC_LOGIN="${USER}@your-cluster.edu"
 
+
+# -----------------------------------------------------------------------------
+# Account Configuration
+# -----------------------------------------------------------------------------
 # Your primary Slurm account name. Used for all jobs by default.
 ACCOUNT=$(id -gn)
 
-# The name of the partition/queue for CPU jobs.
-CPU_PARTITION="cpu"
-
-# The name of the partition/queue for GPU jobs.
-GPU_PARTITION="gpu"
-
-# The account to use for GPU jobs. Default is ACCOUNT.
-# Useful if your GPU allocation is under a different project/account.
-GPU_ACCOUNT="${ACCOUNT}"
-
+# -----------------------------------------------------------------------------
+# Cache/Logging Configuration
+# -----------------------------------------------------------------------------
 # Location for marimo/Jupyter Notebook log files
 NOTEBOOK_LOGS="${HOME}/logs"
 
 # Caches
-OLLAMA_CACHE="${HOME}/.ollama/models"
+export HF_HUB_CACHE=""
+export OLLAMA_MODELS=""
+
+
+# -----------------------------------------------------------------------------
+# Partition Configuration
+# Examples shown below
+# -----------------------------------------------------------------------------
+# 1. CPU Profile (Default)
+CPU_PARTITION="--partition=cpu --account=${ACCOUNT}"
+
+# 2. Standard GPU Profile
+GPU_PARTITION="--partition=gpu --account=${ACCOUNT}"
+
+# Helper Function: Partition Dictionary
+get_partition_options() {
+    local key="$1"
+    case "$key" in
+        "cpu")
+            echo "${CPU_PARTITION}"
+            ;;
+        "gpu")
+            echo "${GPU_PARTITION}"
+            ;;
+        *)
+            # Return error status if key is not found
+            return 1
+            ;;
+    esac
+}
